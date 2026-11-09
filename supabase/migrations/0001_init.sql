@@ -14,6 +14,8 @@ create table public.app_settings (
 insert into public.app_settings (key, value) values
   ('pricing', '{"script": 2, "character_card": 3, "frame": 3, "voiceover": 30, "render": 5, "frame_regenerate": 3}'),
   ('limits', '{"max_concurrent_projects": 2, "max_daily_projects": 10}'),
+  -- Gerçek maliyet tahmini için birim fiyatlar (USD) ve bir kredinin satış değeri
+  ('api_prices', '{"claude_input_per_mtok": 2, "claude_output_per_mtok": 10, "replicate_image": 0.04, "elevenlabs_per_1k_chars": 0.15, "scribe_per_minute": 0.007, "render": 0.02, "credit_value": 0.05}'),
   ('signup_bonus_credits', '200');
 
 -- ---------------------------------------------------------------------------
@@ -42,6 +44,9 @@ create table public.projects (
     'draft', 'script', 'characters', 'producing', 'preview', 'rendering', 'done', 'failed'
   )),
   cover_image_url text,
+  job_step text,                -- arka planda süren adımın adı (ilerleme göstergesi için)
+  job_error text,               -- kullanıcıya gösterilecek son hata mesajı
+  job_started_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -55,6 +60,7 @@ create table public.scripts (
   word_count integer not null,
   version integer not null default 1,
   vote_options jsonb,
+  opening_stamp text,           -- açılış kartı: mekân/zaman damgası
   approved_at timestamptz,
   created_at timestamptz not null default now(),
   unique (project_id, version)
@@ -67,6 +73,7 @@ create table public.characters (
   description_en text not null,
   card_image_url text,
   replicate_prediction_id text,
+  status text not null default 'pending' check (status in ('pending', 'generating', 'ready', 'error')),
   approved_at timestamptz,
   created_at timestamptz not null default now(),
   unique (project_id, name)
@@ -89,6 +96,10 @@ create table public.frames (
   shot_prompt_en text not null,
   character_ids uuid[] not null default '{}',
   location_key text,
+  kind text not null default 'normal' check (kind in (
+    'normal', 'opening', 'problem', 'final', 'reveal', 'closing'
+  )),
+  uses_product boolean not null default false,
   image_url text,
   replicate_prediction_id text,
   status text not null default 'queued' check (status in (
@@ -133,9 +144,9 @@ create table public.renders (
   status text not null default 'queued' check (status in ('queued', 'rendering', 'done', 'error')),
   video_url text,
   duration double precision,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (project_id, variant)
 );
-create index renders_project_idx on public.renders (project_id);
 
 -- ---------------------------------------------------------------------------
 -- Krediler, maliyet ve olay günlüğü
