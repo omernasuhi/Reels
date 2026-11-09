@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { getDict } from "@/i18n";
 import { signOut } from "@/server/actions/auth";
 
-export function AppHeader({ credits }: { credits: number | null }) {
+export function AppHeader({ credits, admin }: { credits: number | null; admin: boolean }) {
   const t = getDict();
   const links = [
     { href: "/", label: t.nav.dashboard },
     { href: "/credits", label: t.nav.credits },
     { href: "/settings", label: t.nav.settings },
+    ...(admin ? [{ href: "/admin", label: t.nav.admin }] : []),
   ];
   return (
     <header className="border-b border-border">

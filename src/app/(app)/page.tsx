@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { getDict } from "@/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { Project } from "@/lib/types";
+import { signedUrl } from "@/lib/storage";
 import { formatDate } from "@/lib/utils";
 
 export default async function DashboardPage() {
@@ -20,6 +21,9 @@ export default async function DashboardPage() {
   >[];
 
   if (error) return <Alert tone="error">{t.dashboard.loadError}</Alert>;
+  const covers = new Map(
+    await Promise.all(projects.map(async (p) => [p.id, await signedUrl(p.cover_image_url)] as const)),
+  );
 
   if (projects.length === 0) {
     return (
@@ -57,12 +61,21 @@ export default async function DashboardPage() {
         {projects.map((p) => (
           <li key={p.id}>
             <Link href={`/projects/${p.id}`} className="group block rounded-lg">
-              {/* Kapak kareleri R2'ye bağlanınca imzalı adresle burada gösterilecek. */}
-              <div
-                role="img"
-                aria-label={t.dashboard.noCover}
-                className="aspect-[9/16] rounded-lg border border-border bg-muted group-hover:border-primary"
-              />
+              {covers.get(p.id) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={covers.get(p.id)!}
+                  alt={t.dashboard.coverAlt(p.title)}
+                  loading="lazy"
+                  className="aspect-[9/16] w-full rounded-lg border border-border object-cover group-hover:border-primary"
+                />
+              ) : (
+                <div
+                  role="img"
+                  aria-label={t.dashboard.noCover}
+                  className="aspect-[9/16] rounded-lg border border-border bg-muted group-hover:border-primary"
+                />
+              )}
               <h2 className="mt-3 line-clamp-2 text-base font-medium">{p.title}</h2>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <Badge>{t.projectStatus[p.status]}</Badge>
