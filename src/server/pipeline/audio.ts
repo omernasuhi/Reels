@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { scribeWords, ttsWithTimestamps } from "@/lib/ai/elevenlabs";
 import { env } from "@/lib/env";
 import { alignWords, charsToWords, findPhrase, type TimedWord } from "@/lib/pipeline/align";
-import { buildFrameTimes, buildTrimMap, defaultCards, parseSilences, trimFilter } from "@/lib/pipeline/timeline";
+import { buildFrameTimes, buildTrimMap, defaultCards, parseSilences, speechOnset, trimFilter } from "@/lib/pipeline/timeline";
 import { getObject, putObject } from "@/lib/storage";
 import type { AudioRow, Frame } from "@/lib/types";
 import { db, getSetting, logCost, logEvent } from "@/server/db";
@@ -106,7 +106,7 @@ export async function buildTimeline(projectId: string) {
       const isProtected =
         f.kind === "problem" || f.kind === "final" || f.kind === "reveal" || (f.kind === "closing" && !closingSeen);
       if (f.kind === "closing") closingSeen = true;
-      if (isProtected) protectedStarts.push(words[at].start);
+      if (isProtected) protectedStarts.push(speechOnset(words[at].start, silences));
     }
 
     const cuts = buildTrimMap(silences, protectedStarts);
@@ -119,7 +119,7 @@ export async function buildTimeline(projectId: string) {
     const trimmedKey = `projects/${projectId}/audio/trimmed.mp3`;
     await putObject(trimmedKey, await fs.readFile(outFile), "audio/mpeg");
 
-    const timing = buildFrameTimes(frames.map((f) => f.start_phrase), words, cuts, rawDuration);
+    const timing = buildFrameTimes(frames.map((f) => f.start_phrase), words, cuts, rawDuration, silences);
     if (timing.missing.length) {
       await logEvent(projectId, "timeline.build", "Bazı karelerin başlangıç ifadesi seste bulunamadı; yaklaşık yerleştirildi", { frames: timing.missing }, "warn");
     }
@@ -142,7 +142,7 @@ export async function buildTimeline(projectId: string) {
     const { count } = await db().from("cards").select("id", { count: "exact", head: true }).eq("project_id", projectId);
     if (!count) {
       const cards = defaultCards(
-        frames.map((f, i) => ({ index: f.index, kind: f.kind, duration: timing.frames[i].duration })),
+        frames.map((f, i) => ({ index: f.index, kind: f.kind, duration: timing.frames[i].duration, sentence: f.sentence })),
         script?.opening_stamp ?? null,
         script?.vote_options ?? null,
       );

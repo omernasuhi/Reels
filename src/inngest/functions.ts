@@ -40,51 +40,63 @@ function original<K extends keyof Events>(event: { data: unknown }): Events[K] {
   return (event.data as { event: { data: Events[K] } }).event.data;
 }
 
-// D) Replicate ile görsel üretir ve depoya kopyalar. Her alt adım ayrı bir
-// dayanıklı adımdır: yeniden çalıştırmada tamamlanan çağrılar tekrarlanmaz.
+// D) Replicate ile görsel üretir ve depoya kopyalar. Tek bir dayanıklı adımdır;
+// adım sürdükçe eşzamanlılık hakkını elinde tutar, böylece aynı anda en fazla
+// IMAGE_CONCURRENCY tahmin çalışır. Tahmin kimliği oluşturulur oluşturulmaz
+// satıra yazılır: adım yeniden çalışırsa yeni tahmin açmaz (iki kez ödeme yok),
+// var olanı beklemeye devam eder.
 async function generateImage(
   step: Step,
   id: string,
-  args: { prompt: string; refKeys: string[]; outKey: string; projectId: string; userId: string; operation: string },
+  args: {
+    prompt: string;
+    refKeys: string[];
+    outKey: string;
+    projectId: string;
+    userId: string;
+    operation: string;
+    table: "frames" | "characters";
+    rowId: string;
+  },
 ): Promise<string> {
   let lastError = "unknown";
   for (let attempt = 0; attempt < 2; attempt++) {
     const sid = `${id}-a${attempt}`;
-    let pred: Prediction = await step.run(`${sid}-create`, async () => {
-      const refs = await Promise.all(args.refKeys.map(referenceUrl));
-      const p = await createImagePrediction(args.prompt, refs);
-      const prices = await getSetting("api_prices");
-      await logCost(args.projectId, args.userId, "replicate", args.operation, prices.replicate_image, { prediction: p.id });
-      return { id: p.id, status: p.status, output: p.output, error: p.error };
-    });
+    const result = await step.run(sid, async () => {
+      const { data: row } = await db().from(args.table).select("replicate_prediction_id").eq("id", args.rowId).single();
+      const saved = row?.replicate_prediction_id as string | null;
+      let pred: Prediction;
+      if (saved?.startsWith(`${sid}:`)) {
+        pred = await getPrediction(saved.slice(sid.length + 1));
+      } else {
+        const refs = await Promise.all(args.refKeys.map(referenceUrl));
+        pred = await createImagePrediction(args.prompt, refs);
+        await db().from(args.table).update({ replicate_prediction_id: `${sid}:${pred.id}` }).eq("id", args.rowId);
+        const prices = await getSetting("api_prices");
+        await logCost(args.projectId, args.userId, "replicate", args.operation, prices.replicate_image, { prediction: pred.id });
+      }
 
-    if (!isTerminal(pred) && isWebhookReachable) {
-      await step.waitForEvent(`${sid}-webhook`, {
-        event: "replicate/prediction.completed",
-        timeout: "2m",
-        if: `async.data.id == "${pred.id}"`,
-      });
-    }
-    // Yedek: yokla.
-    for (let i = 0; i < 50 && !isTerminal(pred); i++) {
-      if (i > 0 || !isWebhookReachable) await step.sleep(`${sid}-wait-${i}`, "6s");
-      pred = await step.run(`${sid}-poll-${i}`, async () => {
-        const p = await getPrediction(pred.id);
-        return { id: p.id, status: p.status, output: p.output, error: p.error };
-      });
-    }
+      // Webhook sonucu geldiyse onu kullan; yoksa aralıklı yokla.
+      const deadline = Date.now() + 4 * 60 * 1000;
+      for (let i = 0; !isTerminal(pred) && Date.now() < deadline; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const { data: hook } = await db().from("replicate_results").select("payload").eq("prediction_id", pred.id).maybeSingle();
+        if (hook) pred = hook.payload as Prediction;
+        else if (!isWebhookReachable || i % 5 === 4) pred = await getPrediction(pred.id);
+      }
+      if (!isTerminal(pred)) throw new Error(`prediction ${pred.id} still running`); // adım yeniden denenir, aynı tahmini bekler
 
-    const url = outputUrl(pred);
-    if (pred.status === "succeeded" && url) {
-      return step.run(`${sid}-store`, async () => {
+      const url = outputUrl(pred);
+      if (pred.status === "succeeded" && url) {
         await putObject(args.outKey, await downloadOutput(url), "image/jpeg");
-        return args.outKey;
-      });
-    }
-    lastError = pred.error ?? pred.status;
-    await step.run(`${sid}-log`, () =>
-      logEvent(args.projectId, args.operation, "Görsel üretimi başarısız", { prediction: pred.id, error: lastError, attempt }, "warn"),
-    );
+        return { ok: true as const, error: "" };
+      }
+      const error = pred.error ?? pred.status;
+      await logEvent(args.projectId, args.operation, "Görsel üretimi başarısız", { prediction: pred.id, error, attempt }, "warn");
+      return { ok: false as const, error };
+    });
+    if (result.ok) return args.outKey;
+    lastError = result.error;
   }
   throw new NonRetriableError(`image generation failed: ${lastError}`);
 }
@@ -147,7 +159,7 @@ export const characterGenerate = inngest.createFunction(
     id: "characters-generate",
     triggers: [{ event: "character/generate.requested" }],
     concurrency: { limit: env.imageConcurrency },
-    retries: 2,
+    retries: 3,
     onFailure: async ({ event, error }) => {
       const d = original<"character/generate.requested">(event);
       await refundCredits(d.userId, d.chargeRef);
@@ -169,6 +181,8 @@ export const characterGenerate = inngest.createFunction(
       projectId: d.projectId,
       userId: d.userId,
       operation: "characters.generate",
+      table: "characters",
+      rowId: d.characterId,
     });
     await step.run("save", async () => {
       await db().from("characters").update({ card_image_url: key, status: "ready", approved_at: null }).eq("id", d.characterId);
@@ -199,7 +213,7 @@ export const frameGenerate = inngest.createFunction(
     id: "frames-generate",
     triggers: [{ event: "frame/generate.requested" }],
     concurrency: { limit: env.imageConcurrency },
-    retries: 2,
+    retries: 3,
     onFailure: async ({ event, error }) => {
       const d = original<"frame/generate.requested">(event);
       if (d.chargeRef) await refundCredits(d.userId, d.chargeRef);
@@ -238,7 +252,7 @@ export const frameGenerate = inngest.createFunction(
     if (!ctx) return { skipped: true };
 
     const base = `projects/${d.projectId}/frames/${String(ctx.frame.index).padStart(3, "0")}-${event.id}`;
-    const common = { projectId: d.projectId, userId: d.userId };
+    const common = { projectId: d.projectId, userId: d.userId, table: "frames" as const, rowId: d.frameId };
     let imageKey = await generateImage(step, "gen", {
       ...common,
       prompt: ctx.prompt,

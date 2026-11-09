@@ -24,6 +24,11 @@ async function balanceOf(userId: string) {
   return (data?.credits_balance as number) ?? 0;
 }
 
+// Üst çubuktaki bakiye ortak düzende durur; kredi hareketinden sonra tazelenir.
+function touch() {
+  revalidatePath("/", "layout");
+}
+
 async function insufficient(userId: string, need: number): Promise<ActionResult> {
   return { error: t.common.insufficientCredits(need, await balanceOf(userId)) };
 }
@@ -116,6 +121,7 @@ export async function requestScript(projectId: string, instruction?: string): Pr
     await logEvent(projectId, "queue", "Olay gönderilemedi", { error: String(err) }, "error");
     return { error: t.common.actionFailed };
   }
+  touch();
   return { ok: true };
 }
 
@@ -166,6 +172,7 @@ export async function approveScript(projectId: string, text: string): Promise<Ac
   await db().from("characters").update({ status: "generating" }).in("id", events.map((e) => e.characterId));
   await send("project/script.approved", { projectId, userId: user.id });
   if (events.length) await send("character/generate.requested", events);
+  touch();
   return { ok: true };
 }
 
@@ -221,6 +228,7 @@ export async function regenerateCharacter(characterId: string, description?: str
   }
   await db().from("characters").update({ description_en: next ?? character.description_en, status: "generating", approved_at: null }).eq("id", characterId);
   await send("character/generate.requested", { characterId, projectId: project.id, userId: user.id, chargeRef });
+  touch();
   return { ok: true };
 }
 
@@ -251,6 +259,7 @@ export async function startProduction(projectId: string): Promise<ActionResult> 
     return insufficient(user.id, total);
   }
   await send("project/production.requested", { projectId, userId: user.id, chargeRef });
+  touch();
   return { ok: true };
 }
 
@@ -295,6 +304,7 @@ export async function regenerateFrame(frameId: string): Promise<ActionResult> {
   }
   await db().from("frames").update({ status: "queued" }).eq("id", frameId);
   await send("frame/generate.requested", { frameId, projectId: own.project.id, userId: user.id, mode: "regen", chargeRef });
+  touch();
   return { ok: true };
 }
 
@@ -332,7 +342,7 @@ export async function exportVideo(projectId: string): Promise<ActionResult> {
   }
   await db().from("renders").delete().eq("project_id", projectId);
   await send("project/render.requested", { projectId, userId: user.id, chargeRef });
-  revalidatePath(`/projects/${projectId}`);
+  touch();
   return { ok: true };
 }
 

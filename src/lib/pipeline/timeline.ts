@@ -82,6 +82,7 @@ export function buildFrameTimes(
   words: TimedWord[],
   cuts: Range[],
   rawDuration: number,
+  silences: Range[] = [],
 ): { frames: FrameTiming[]; total: number; missing: number[] } {
   const total = roundToFrame(trimmedDuration(rawDuration, cuts) + TAIL);
   const frames: FrameTiming[] = [];
@@ -98,7 +99,7 @@ export function buildFrameTimes(
         cursor + Math.max(1, Math.floor((words.length - cursor) / (startPhrases.length - i))),
       );
     }
-    const raw = i === 0 ? 0 : Math.max(0, (words[idx]?.start ?? 0) - FRAME_LEAD);
+    const raw = i === 0 ? 0 : Math.max(0, speechOnset(words[idx]?.start ?? 0, silences) - FRAME_LEAD);
     let start = roundToFrame(mapTime(raw, cuts));
     if (i > 0) start = Math.max(start, roundToFrame(frames[i - 1].start_time_final + MIN_FRAME_GAP));
     frames.push({ wordIndex: idx, start_time_raw: round3(raw), start_time_final: start, duration: 0 });
@@ -110,6 +111,17 @@ export function buildFrameTimes(
     frames[i].duration = round3(Math.max(1 / FPS, next - frames[i].start_time_final));
   }
   return { frames, total: Math.max(total, frames.at(-1)?.start_time_final ?? 0), missing };
+}
+
+// TTS zaman damgaları, duraklamadan sonraki kelimenin başlangıcını çoğu zaman
+// sessizliğin içine koyar. Kelime bir sessizliğin içinde başlıyorsa gerçek
+// başlangıç, sessizliğin bittiği andır.
+export function speechOnset(wordStart: number, silences: Range[]): number {
+  for (const s of silences) {
+    if (wordStart >= s.start - 0.02 && wordStart < s.end) return s.end;
+    if (s.start > wordStart) break;
+  }
+  return wordStart;
 }
 
 function round3(n: number): number {
@@ -135,8 +147,9 @@ export type DefaultCard = {
 const PROBLEM_LABELS = ["BİRİNCİ SORUN", "İKİNCİ SORUN", "ÜÇÜNCÜ SORUN"];
 
 // Varsayılan kartlar: açılış damgası, sorun başlıkları, finalde oylama kartı.
+// Oylama kartı, seçeneklerin söylendiği karede açılır ve videonun sonuna kadar kalır.
 export function defaultCards(
-  frames: { index: number; kind: FrameKind; duration: number }[],
+  frames: { index: number; kind: FrameKind; duration: number; sentence?: string }[],
   openingStamp: string | null,
   voteOptions: string[] | null,
 ): DefaultCard[] {
@@ -164,13 +177,20 @@ export function defaultCards(
       });
     }
   }
-  const closing = frames.find((f) => f.kind === "closing") ?? frames.at(-1);
-  if (closing && voteOptions?.length === 2) {
+  if (voteOptions?.length === 2 && frames.length) {
+    const lower = (x: string) => x.toLocaleLowerCase("tr-TR");
+    const closing = frames.filter((f) => f.kind === "closing");
+    const at =
+      closing.find((f) => f.sentence && lower(f.sentence).includes(lower(voteOptions[0]))) ??
+      closing[0] ??
+      frames[frames.length - 1];
+    const offset = 0.3;
+    const rest = frames.filter((f) => f.index >= at.index).reduce((sum, f) => sum + f.duration, 0);
     cards.push({
       text: upperTr(`${voteOptions[0]} ya da ${voteOptions[1]}`),
-      frame_index: closing.index,
-      offset: 0.4,
-      duration: Math.max(2, Math.round((closing.duration - 0.6) * 10) / 10),
+      frame_index: at.index,
+      offset,
+      duration: Math.max(2, Math.round((rest - offset - 0.3) * 10) / 10),
       size: 96,
       y_position: 0.5,
     });

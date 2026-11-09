@@ -70,10 +70,12 @@ export function scriptSystem(o: ScriptOptions): string {
 
 SENARYO KURALLARI
 - Türkçe, şimdiki zaman, konuşma ağzı "-yo" (geliyo, bakıyo, biliyosun). Sayılar yazıyla.
+- "-yo" kuralı istisnasızdır: hiçbir fiilde "-yor" kullanma. "yazıyor" değil "yazıyo", "açmıyorsun" değil "açmıyosun", "görüyorsun" değil "görüyosun", "geliyorlar" değil "geliyolar".
 - İlk cümle doğrudan sahnenin içinden açılan bir kanca; "başa saralım" ile başlama.
 - Yapı: kanca -> kısa geçmiş -> "Birinci sorun:", "İkinci sorun:", "Üçüncü sorun:" (tırmanan) -> final sahnesi -> "Göremediğin şey, ..." -> sabit kapanış: "Yorumlara tek kelime yaz. [X] ya da [Y]. Çoğunluk hangisini yazarsa, hikâye oradan devam eder."
 - Kapanıştaki [X] ve [Y] yerine hikâyenin iki olası devamını özetleyen birer kelime koy (köşeli parantez olmadan). Aynı iki kelimeyi vote_options alanına yaz.
 - Bir yerde "Neden olmasın?" geçsin.
+- Bölümleri (kanca, geçmiş, her sorun, final, "Göremediğin şey", kapanış) boş satırla ayrılmış paragraflar olarak yaz; tagged_text içinde de aynı paragraf düzenini koru.
 - Uzunluk: ${len.minWords}-${len.maxWords} kelime (${len.label}). Bu aralığın dışına çıkma.
 - Ton: ${TONES[o.tone]}.
 - ${narration}
@@ -111,6 +113,8 @@ export function framePlanSystem(frameTarget: { min: number; max: number }, hasPr
 SPLITTING
 - Split the narration in order, sentence by sentence, covering every word exactly once. A long sentence may be split at a natural clause boundary; very short neighbouring sentences may share a frame.
 - Target ${frameTarget.min}-${frameTarget.max} frames in total (about 3 seconds each).
+- No frame may cover more than about 14 words: split longer sentences at a clause boundary (comma, "ve", "ama", "çünkü").
+- A sentence of one or two words never gets its own frame: attach it to the previous or the next frame.
 - sentence: the exact text span of the frame, copied verbatim from the narration.
 - start_phrase: the first 2-3 words of that span, copied verbatim (same spelling and punctuation). It must be findable in the narration.
 
@@ -129,7 +133,9 @@ SHOT PROMPT (shot_prompt_en), in this order, one flowing paragraph:
 4. The emotion, shown through body language and posture (faces are simple cartoon faces with dot eyes, so do not rely on facial detail).
 5. The lighting.
 Do not describe the location (it is appended separately from location_key), and do not add style words, text rules or face rules; those are appended automatically.
-- character_ids: the ids of the characters visible in the frame, at most 3. Frames may have no characters (objects, places).
+- character_ids: the ids of the characters visible in the frame, at most 3.
+- Whenever a person or any part of a person is visible (hands, a back, a silhouette, a point-of-view shot of someone's own hands), that person MUST be one of the listed characters: put their id in character_ids and introduce them in the shot with their full description. Never show unnamed or generic people.
+- A frame with empty character_ids must contain no people at all, not even hands: only objects and places.
 - location_key: one of the given location keys.
 - The first frame must be a strong, striking opening image.
 - In the closing frames, do NOT show any action that reveals or favours one of the two vote outcomes; keep the moment open.

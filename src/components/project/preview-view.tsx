@@ -130,7 +130,7 @@ export function PreviewView({ state, refresh }: Props) {
         <ul className="mt-3 flex gap-2 overflow-x-auto pb-2">
           {frames.map((f) => (
             <li key={f.id} className="w-20 shrink-0">
-              <FrameTile frame={f} selected={f.id === selectedId || (!selectedId && f.index === playingIndex)} onSelect={() => selectFrame(f)} />
+              <FrameTile compact frame={f} selected={f.id === selectedId || (!selectedId && f.index === playingIndex)} onSelect={() => selectFrame(f)} />
             </li>
           ))}
         </ul>

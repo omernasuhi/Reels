@@ -107,6 +107,7 @@ async function renderOnLambda(props: StoryProps): Promise<Buffer> {
     composition: "Story",
     inputProps: props,
     codec: "h264",
+    crf: 24,
     privacy: "private",
     downloadBehavior: { type: "download", fileName: "video.mp4" },
   });

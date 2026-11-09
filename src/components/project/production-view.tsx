@@ -16,7 +16,10 @@ type FrameState = ProjectState["frames"][number];
 
 const WORKING = ["generating", "checking", "fixing"];
 
-export function FrameTile({ frame, selected, onSelect }: { frame: FrameState; selected?: boolean; onSelect?: () => void }) {
+type TileProps = { frame: FrameState; selected?: boolean; onSelect?: () => void; compact?: boolean };
+
+// compact: dar zaman çizelgesi kutusu; hazır karelerde durum yazısı gösterilmez.
+export function FrameTile({ frame, selected, onSelect, compact }: TileProps) {
   const attention = frame.status === "error" || frame.status === "review";
   return (
     <button
@@ -36,7 +39,9 @@ export function FrameTile({ frame, selected, onSelect }: { frame: FrameState; se
       )}
       <span className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/75 px-1.5 py-1 text-[13px] font-medium text-white">
         <span className="tabular-nums">{frame.index + 1}</span>
-        <span className={cn(attention && "text-[#ffb4a8]")}>{p.frameStatus[frame.status]}</span>
+        {compact && frame.status === "ready" ? null : (
+          <span className={cn("truncate", attention && "text-[#ffb4a8]")}>{p.frameStatus[frame.status]}</span>
+        )}
       </span>
     </button>
   );

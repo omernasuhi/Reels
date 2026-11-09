@@ -15,7 +15,6 @@ export type Events = {
     chargeRef?: string;
   };
   "project/render.requested": { projectId: string; userId: string; chargeRef: string };
-  "replicate/prediction.completed": { id: string };
 };
 
 export function send<K extends keyof Events>(name: K, data: Events[K] | Events[K][]) {

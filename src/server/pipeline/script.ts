@@ -72,6 +72,12 @@ function checkScript(out: ScriptOut, o: ScriptOptions): string[] {
   if (words < len.minWords || words > len.maxWords) {
     problems.push(`plain_text has ${words} words; it must have ${len.minWords}-${len.maxWords}`);
   }
+  const formal = [...new Set(out.plain_text.match(/\p{L}+[ıiuü]yor\p{L}*/gu) ?? [])];
+  if (formal.length) {
+    problems.push(
+      `Use the colloquial "-yo" ending everywhere, never "-yor" (yazıyor -> yazıyo, görüyorsun -> görüyosun). Found: ${formal.slice(0, 12).join(", ")}`,
+    );
+  }
   if (!out.plain_text.includes("Neden olmasın?")) problems.push('"Neden olmasın?" is missing');
   if (!out.plain_text.includes("Yorumlara tek kelime yaz.")) problems.push("The fixed closing is missing");
   if (out.vote_options.length !== 2) problems.push("vote_options must have exactly 2 items");

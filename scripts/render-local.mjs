@@ -37,6 +37,7 @@ await renderMedia({
   composition,
   serveUrl,
   codec: "h264",
+  crf: 24, // sosyal medya için yeterli kalite; 2-3 dakikalık video yaklaşık 40-80 MB
   outputLocation: outFile,
   inputProps,
   browserExecutable,

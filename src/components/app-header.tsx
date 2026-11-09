@@ -31,7 +31,7 @@ export function AppHeader({ credits, admin }: { credits: number | null; admin: b
         </div>
         <nav
           aria-label={t.nav.main}
-          className="-mx-3 flex w-full items-center sm:mx-0 sm:ml-auto sm:w-auto"
+          className="-mx-3 flex w-full flex-wrap items-center sm:mx-0 sm:ml-auto sm:w-auto"
         >
           {links.map((l) => (
             <Button key={l.href} asChild variant="ghost" size="sm">

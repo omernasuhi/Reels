@@ -7,6 +7,7 @@ import {
   defaultCards,
   mapTime,
   parseSilences,
+  speechOnset,
   trimFilter,
   trimmedDuration,
   upperTr,
@@ -143,6 +144,22 @@ describe("trim_map zaman dönüşümü", () => {
   });
 });
 
+describe("konuşma başlangıcı", () => {
+  it("sessizliğin içinde başlayan kelimeyi sessizliğin sonuna çeker", () => {
+    const silences = [{ start: 5, end: 6.5 }];
+    expect(speechOnset(6.2, silences)).toBe(6.5);
+    expect(speechOnset(6.5, silences)).toBe(6.5);
+    expect(speechOnset(4.5, silences)).toBe(4.5);
+    // Kare, kelimenin gerçek başlangıcından 0,12 sn önce gelir.
+    const words = [
+      { word: "Bir", start: 0.1, end: 0.5 },
+      { word: "İkinci", start: 6.2, end: 7 },
+    ];
+    const r = buildFrameTimes(["Bir", "İkinci"], words, [], 8, silences);
+    expect(r.frames[1].start_time_raw).toBeCloseTo(6.38);
+  });
+});
+
 describe("kartlar", () => {
   it("Türkçe büyük harf dönüşümü", () => {
     expect(upperTr("istanbul ılık")).toBe("İSTANBUL ILIK");
@@ -153,7 +170,9 @@ describe("kartlar", () => {
         { index: 0, kind: "opening", duration: 3 },
         { index: 1, kind: "problem", duration: 3 },
         { index: 2, kind: "problem", duration: 3 },
-        { index: 3, kind: "closing", duration: 6 },
+        { index: 3, kind: "closing", duration: 2, sentence: "Yorumlara tek kelime yaz." },
+        { index: 4, kind: "closing", duration: 1.5, sentence: "Kal ya da git." },
+        { index: 5, kind: "closing", duration: 4.5, sentence: "Çoğunluk hangisini yazarsa, hikâye oradan devam eder." },
       ],
       "İstanbul, gece yarısı",
       ["kal", "git"],
@@ -165,5 +184,8 @@ describe("kartlar", () => {
       "KAL YA DA GİT",
     ]);
     expect(cards[1].duration).toBe(1.8);
+    // Oylama kartı seçeneklerin söylendiği karede açılır, sona kadar kalır.
+    expect(cards[3].frame_index).toBe(4);
+    expect(cards[3].duration).toBeCloseTo(5.4);
   });
 });

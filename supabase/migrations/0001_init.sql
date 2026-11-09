@@ -177,6 +177,13 @@ create table public.api_costs (
 );
 create index api_costs_project_idx on public.api_costs (project_id);
 
+-- Replicate webhook sonuçları. Üretim adımı önce buraya bakar, yoksa Replicate'i yoklar.
+create table public.replicate_results (
+  prediction_id text primary key,
+  payload jsonb not null,
+  created_at timestamptz not null default now()
+);
+
 create table public.project_events (
   id bigint generated always as identity primary key,
   project_id uuid not null references public.projects (id) on delete cascade,
@@ -332,6 +339,7 @@ alter table public.renders enable row level security;
 alter table public.credit_transactions enable row level security;
 alter table public.api_costs enable row level security;       -- politika yok: yalnızca sunucu
 alter table public.project_events enable row level security;  -- politika yok: yalnızca sunucu
+alter table public.replicate_results enable row level security; -- politika yok: yalnızca sunucu
 
 -- İstemci rolleri yalnızca okuyabilir; yazma yetkilerini tablo düzeyinde de kapat.
 revoke all on all tables in schema public from anon, authenticated;

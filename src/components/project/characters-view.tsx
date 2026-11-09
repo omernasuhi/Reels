@@ -66,7 +66,7 @@ function CharacterCard({ character, credits, run, pending }: { character: Projec
           {generating ? null : (
             <div className="mt-3 flex flex-col gap-2">
               {character.status === "ready" && !character.approved_at ? (
-                <Button size="sm" disabled={Boolean(pending)} onClick={() => run(`approve-${character.id}`, () => approveCharacter(character.id))}>
+                <Button size="sm" variant="outline" className="border-primary" disabled={Boolean(pending)} onClick={() => run(`approve-${character.id}`, () => approveCharacter(character.id))}>
                   {c.approve}
                 </Button>
               ) : null}
