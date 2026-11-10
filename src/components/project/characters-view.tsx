@@ -13,6 +13,7 @@ import { JobProgress, useAction } from "./shared";
 
 const t = getDict();
 const c = t.characters;
+const PILOT = 4; // src/server/ops.ts PILOT_FRAMES ile aynı
 
 type Props = { state: ProjectState; refresh: () => Promise<void> };
 type Run = ReturnType<typeof useAction>["run"];
@@ -97,6 +98,7 @@ export function CharactersView({ state, refresh }: Props) {
   const planReady = frames.length > 0 && !planning;
   const allApproved = characters.length > 0 && characters.every((ch) => ch.status === "ready" && ch.approved_at);
   const total = frames.length * pricing.frame + pricing.voiceover;
+  const pilot = frames.length > PILOT;
 
   return (
     <section aria-labelledby="characters-title" className="space-y-6">
@@ -126,8 +128,31 @@ export function CharactersView({ state, refresh }: Props) {
       ) : (
         <div className="space-y-2">
           {allApproved ? null : <p>{c.needApproval}</p>}
+          <details className="rounded-lg border border-border bg-card">
+            <summary className="cursor-pointer px-4 py-3 font-medium">{c.sceneList(frames.length)}</summary>
+            <p className="border-t border-border px-4 pt-3 text-muted-foreground">{c.sceneListHelp}</p>
+            <ol className="divide-y divide-border px-4 pb-2">
+              {frames.map((f) => (
+                <li key={f.id} className="py-2">
+                  <span className="font-medium tabular-nums">{f.index + 1}.</span> {f.sentence}
+                </li>
+              ))}
+            </ol>
+          </details>
+          {pilot ? <p className="pt-2 text-muted-foreground">{c.pilotHelp}</p> : null}
+          {pilot ? (
+            <Button
+              size="lg"
+              className="h-auto min-h-12 w-full whitespace-normal py-3"
+              disabled={!allApproved || Boolean(pending)}
+              onClick={() => run("pilot", () => startProduction(project.id, true))}
+            >
+              {pending === "pilot" ? t.common.working : c.startPilot(PILOT, PILOT * pricing.frame)}
+            </Button>
+          ) : null}
           <Button
             size="lg"
+            variant={pilot ? "ghost" : "default"}
             className="h-auto min-h-12 w-full whitespace-normal py-3"
             disabled={!allApproved || Boolean(pending)}
             onClick={() => run("start", () => startProduction(project.id))}

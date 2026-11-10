@@ -5,7 +5,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { getDict } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { acceptFrame, retryFrame } from "@/server/actions/projects";
+import { acceptFrame, continueProduction, regenerateFrame, retryFrame } from "@/server/actions/projects";
 import type { ProjectState } from "@/server/state";
 import { JobProgress, useAction } from "./shared";
 
@@ -58,7 +58,11 @@ export function ProductionView({ state, refresh }: { state: ProjectState; refres
   );
   const fraction = frames.length ? 0.9 * (partial / frames.length) + (audioReady ? 0.1 : 0.03) : 0;
   const attention = frames.filter((f) => f.status === "error" || f.status === "review");
-  const working = frames.some((f) => f.status === "queued" || WORKING.includes(f.status)) || !audioReady;
+  const pilotReview = project.job_step === "pilot_review";
+  const pilotRun = project.job_step === "pilot";
+  const queued = frames.filter((f) => f.status === "queued").length;
+  const busy = frames.some((f) => WORKING.includes(f.status));
+  const working = !pilotReview && (pilotRun ? busy || done === 0 : frames.some((f) => f.status === "queued" || WORKING.includes(f.status)) || !audioReady);
   const selected = frames.find((f) => f.id === selectedId) ?? null;
   const label = !audioReady && project.job_step && project.job_step !== "frames" ? `${t.jobSteps.frames} · ${t.jobSteps[project.job_step as keyof typeof t.jobSteps] ?? ""}` : t.jobSteps.frames;
 
@@ -71,17 +75,31 @@ export function ProductionView({ state, refresh }: { state: ProjectState; refres
 
       {working ? (
         <JobProgress
-          label={label}
-          fraction={fraction}
+          label={pilotRun ? t.jobSteps.pilot : label}
+          fraction={pilotRun ? partial / Math.max(1, frames.length - queued) : fraction}
           startedAt={project.job_started_at}
           expectedSeconds={Math.max(120, frames.length * 12)}
-          detail={`${p.framesProgress(done, frames.length)} · ${audioReady ? p.audioReady : p.audioPending}`}
+          detail={pilotRun ? p.framesProgress(done, frames.length - queued) : `${p.framesProgress(done, frames.length)} · ${audioReady ? p.audioReady : p.audioPending}`}
         />
+      ) : null}
+      {pilotReview ? (
+        <div className="rounded-lg border border-primary bg-card p-5">
+          <p className="text-lg font-semibold">{p.pilotTitle}</p>
+          <p className="mt-1">{p.pilotHelp}</p>
+          <Button
+            size="lg"
+            className="mt-4 h-auto min-h-12 w-full whitespace-normal py-3"
+            disabled={Boolean(pending) || busy}
+            onClick={() => run("continue", () => continueProduction(project.id))}
+          >
+            {pending === "continue" ? t.common.working : p.continue(queued, queued * state.pricing.frame + state.pricing.voiceover)}
+          </Button>
+        </div>
       ) : null}
       {attention.length ? <Alert tone="error">{p.needsAttention(attention.length)}</Alert> : null}
 
       <ul className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
-        {frames.map((f) => (
+        {(pilotReview || pilotRun ? frames.filter((f) => f.status !== "queued") : frames).map((f) => (
           <li key={f.id}>
             <FrameTile frame={f} selected={f.id === selectedId} onSelect={() => setSelectedId(f.id === selectedId ? null : f.id)} />
           </li>
@@ -119,6 +137,11 @@ export function ProductionView({ state, refresh }: { state: ProjectState; refres
               ) : null}
               <p className="self-center text-muted-foreground">{p.retryFreeHelp}</p>
             </div>
+          ) : null}
+          {pilotReview && selected.status === "ready" ? (
+            <Button variant="outline" className="mt-4 h-auto min-h-11 whitespace-normal py-2" disabled={Boolean(pending)} onClick={() => run("regen", () => regenerateFrame(selected.id))}>
+              {t.preview.regenerate(state.pricing.frame_regenerate)}
+            </Button>
           ) : null}
         </div>
       ) : null}

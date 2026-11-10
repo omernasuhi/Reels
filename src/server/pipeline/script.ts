@@ -11,6 +11,7 @@ import {
 } from "@/lib/pipeline/tags";
 import type { Project, Script } from "@/lib/types";
 import { db, logEvent } from "@/server/db";
+import { projectRules, rulesSection } from "@/server/rules";
 
 export function fullOptions(o: Partial<ScriptOptions> | null | undefined): ScriptOptions {
   return {
@@ -104,13 +105,14 @@ export async function generateScript(projectId: string, instruction?: string) {
     request += `\n\nMEVCUT METİN:\n${previous.plain_text}\n\nMEVCUT KARAKTERLER:\n${JSON.stringify(chars)}\n\nMEVCUT MEKÂNLAR:\n${JSON.stringify(locs)}\n\nİSTENEN DEĞİŞİKLİK: ${instruction}\nMetni bu yönde yeniden yaz; istenmeyen kısımları mümkün olduğunca koru. Karakter ve mekân tariflerini, hikâye gerektirmedikçe aynen bırak.`;
   }
 
-  let out = await claudeJson({ schema: ScriptOut, system: scriptSystem(o), content: request, effort: "high", ctx });
+  const system = scriptSystem(o) + rulesSection(await projectRules(projectId), "script");
+  let out = await claudeJson({ schema: ScriptOut, system, content: request, effort: "high", ctx });
   let problems = checkScript(out, o);
   for (let round = 0; round < 2 && problems.length; round++) {
     await logEvent(projectId, "script.generate", "Senaryo doğrulaması başarısız, düzelttiriliyor", { problems }, "warn");
     out = await claudeJson({
       schema: ScriptOut,
-      system: scriptSystem(o),
+      system,
       content: `${request}\n\nÖNCEKİ ÇIKTIN:\n${JSON.stringify(out)}\n\nBu çıktıda şu sorunlar var, hepsini düzeltip tamamını yeniden döndür:\n- ${problems.join("\n- ")}`,
       effort: "medium",
       ctx,

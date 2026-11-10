@@ -19,6 +19,33 @@ ile indirilen MP4 aynı Remotion kompozisyonundan çıkar.
 5. **Önizleme ve dışa aktarma** — Remotion Player, zaman çizelgesi, kare
    yenileme, kart düzenleme; kartlı ve temiz iki MP4 (1080x1920, 30 fps).
 
+## Asistan, onay noktaları ve kural dosyaları
+
+Süreç katı bir sihirbaz değildir; her projede bir **asistan** (sohbet) vardır.
+Kullanıcı beğenmediği şeyi yazar ("Kerem Bey'in bıyığını kaldır", "13. karedeki
+kişi yanlış", "oylama kelimelerini değiştir"); asistan projeyi görür, gerekirse
+görsele bakar ve uygulamanın kendi işlemlerini araç olarak çağırır.
+
+- **Araçlar** (`src/server/assistant.ts`): görsele bakma, senaryoyu yeniden
+  yazdırma ya da düzeltme, karakter kartını tek değişiklikle düzeltme ya da baştan
+  üretme, mekân ve sahne tarifi değiştirme, kareyi düzeltme ya da yeniden üretme,
+  pilot ve tam üretimi başlatma, kart ekleme/değiştirme/silme, seslendirmeyi
+  yenileme, dışa aktarma. Hepsi arayüz düğmeleriyle aynı fonksiyonları
+  (`src/server/ops.ts`) kullanır; kredi kuralları aynıdır.
+- **Harcama onayı:** kredi harcayan bir araç, kullanıcının sohbette seçtiği
+  "sormadan harcama sınırı"nın üstündeyse çalışmaz; sohbette "Onayla (N kredi)"
+  kartı olarak bekler. Varsayılan sınır 0'dır: her harcamada sorulur. Onaylanan
+  işlem model devreye girmeden, doğrudan sunucuda çalışır.
+- **Seçenekli sorular:** asistan sorularını tıklanabilir seçeneklerle sorar.
+- **Onay noktaları:** senaryo onayı, her karakter kartının onayı, sahne listesi
+  (üretimden önce görülür), pilot kareler (önce 4 kare, stil onayından sonra
+  kalanı), önizleme ve dışa aktarma.
+- **Kural dosyaları:** proje oluştururken düz metin dosyaları eklenir (yazım
+  kuralları, prompt kalıpları, çalışma biçimi). Kullanıcının kitaplığında saklanır
+  (Ayarlar'dan silinebilir) ve asistanın, senaryonun ve kare planının talimatlarına
+  eklenir. Dosyalar uygulamanın sabit kurallarını (stil blokları, etiketler, içerik
+  sınırları, harcama onayı) geçersiz kılamaz.
+
 ## Kurulum
 
 Gerekenler: Node 22+, ffmpeg (PATH'te), bir Supabase projesi, Anthropic,

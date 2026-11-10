@@ -9,7 +9,7 @@ import {
   type Prediction,
 } from "@/lib/ai/replicate";
 import { env, isWebhookReachable } from "@/lib/env";
-import { characterCardPrompt, fixPrompt, framePrompt } from "@/lib/pipeline/prompts";
+import { characterCardPrompt, FACE_RULE, fixPrompt, framePrompt, TEXT_BAN } from "@/lib/pipeline/prompts";
 import { putObject } from "@/lib/storage";
 import type { Character, Frame, Location } from "@/lib/types";
 import { db, getSetting, logCost, logEvent, refundCredits } from "@/server/db";
@@ -18,6 +18,8 @@ import { planFrames, qcFrame, qcPassed, referenceUrl } from "@/server/pipeline/f
 import { renderVariant } from "@/server/pipeline/render";
 import { fullOptions, generateScript, loadProject, moderateTopic, retagScript } from "@/server/pipeline/script";
 import { inngest, type Events } from "./client";
+
+const PILOT_FRAMES = 4;
 
 type Step = GetStepTools<typeof inngest>;
 const t = getDict();
@@ -171,12 +173,16 @@ export const characterGenerate = inngest.createFunction(
     const d = event.data as Events["character/generate.requested"];
     const character = await step.run("load", async () => {
       const { data } = await db().from("characters").select("*").eq("id", d.characterId).single();
-      await db().from("characters").update({ status: "generating" }).eq("id", d.characterId);
-      return data as Character;
+      const row = data as Character;
+      // Yeni bir istek: önceki tahmin kimliği bu çalışmaya ait değil.
+      await db().from("characters").update({ status: "generating", replicate_prediction_id: null }).eq("id", d.characterId);
+      return row;
     });
+    // Düzeltme: mevcut kart referans alınır, yalnızca istenen değişiklik uygulanır.
+    const fixing = Boolean(d.fix && character.card_image_url);
     const key = await generateImage(step, "card", {
-      prompt: characterCardPrompt(character.name, character.description_en),
-      refKeys: [],
+      prompt: fixing ? `${fixPrompt(d.fix!)} ${FACE_RULE} ${TEXT_BAN}` : characterCardPrompt(character.name, character.description_en),
+      refKeys: fixing ? [character.card_image_url!] : [],
       outKey: `projects/${d.projectId}/characters/${d.characterId}-${event.id}.jpg`,
       projectId: d.projectId,
       userId: d.userId,
@@ -195,7 +201,14 @@ export const characterGenerate = inngest.createFunction(
 async function finalizeProject(projectId: string) {
   const project = await loadProject(projectId);
   const { data: frames } = await db().from("frames").select("index, status, image_url").eq("project_id", projectId).order("index");
-  if (project.status === "producing") {
+  if (project.status === "producing" && project.job_step === "pilot") {
+    // Pilot: ilk kareler bitince kullanıcının stil onayı beklenir.
+    const pilot = (frames ?? []).filter((f) => f.status !== "queued");
+    if (pilot.length && pilot.every((f) => (f.status === "ready" || f.status === "review") && f.image_url)) {
+      await setJob(projectId, { job_step: "pilot_review", cover_image_url: frames![0].image_url });
+      await logEvent(projectId, "production", "Pilot kareler hazır, onay bekleniyor");
+    }
+  } else if (project.status === "producing" && project.job_step !== "pilot_review") {
     const { data: audio } = await db().from("audio").select("trimmed_url").eq("project_id", projectId).maybeSingle();
     const done = (frames ?? []).every((f) => (f.status === "ready" || f.status === "review") && f.image_url);
     if (audio?.trimmed_url && frames?.length && done) {
@@ -241,7 +254,7 @@ export const frameGenerate = inngest.createFunction(
         .map((id) => ((chars ?? []) as Character[]).find((c) => c.id === id)?.card_image_url)
         .filter((k): k is string => Boolean(k));
       const icon = frame.uses_product ? fullOptions(project.options).productIconKey : undefined;
-      await db().from("frames").update({ status: "generating" }).eq("id", d.frameId);
+      await db().from("frames").update({ status: "generating", replicate_prediction_id: null }).eq("id", d.frameId);
       return {
         frame,
         cards,
@@ -253,10 +266,11 @@ export const frameGenerate = inngest.createFunction(
 
     const base = `projects/${d.projectId}/frames/${String(ctx.frame.index).padStart(3, "0")}-${event.id}`;
     const common = { projectId: d.projectId, userId: d.userId, table: "frames" as const, rowId: d.frameId };
+    const fixing = Boolean(d.fix && ctx.frame.image_url);
     let imageKey = await generateImage(step, "gen", {
       ...common,
-      prompt: ctx.prompt,
-      refKeys: ctx.refKeys,
+      prompt: fixing ? fixPrompt(d.fix!) : ctx.prompt,
+      refKeys: fixing ? [ctx.frame.image_url!, ...ctx.cards] : ctx.refKeys,
       outKey: `${base}.jpg`,
       operation: "frames.generate",
     });
@@ -311,15 +325,24 @@ export const production = inngest.createFunction(
       const d = original<"project/production.requested">(event);
       // Ses ya da zamanlama başarısız: toplu rezervi iade et, kullanıcı yeniden başlatabilsin.
       await refundCredits(d.userId, d.chargeRef);
-      await setJob(d.projectId, { status: "characters", job_step: null, job_error: friendly(error) });
+      // Kareler zaten varsa (devam ya da ses yenileme) proje geri alınmaz.
+      const { count } = await db().from("frames").select("id", { count: "exact", head: true }).eq("project_id", d.projectId).not("image_url", "is", null);
+      const patch = d.freshAudio
+        ? { status: "preview", job_step: null } // eski ses yerinde duruyor
+        : count
+          ? { job_step: d.resume ? "pilot_review" : null }
+          : { status: "characters", job_step: null };
+      await setJob(d.projectId, { ...patch, job_error: friendly(error) });
       await logEvent(d.projectId, "production", "Başarısız", { error: error.message }, "error");
     },
   },
   async ({ event, step }) => {
     const d = event.data as Events["project/production.requested"];
     const frameIds = await step.run("load-frames", async () => {
-      const { data } = await db().from("frames").select("id").eq("project_id", d.projectId).order("index");
-      return (data ?? []).map((f) => f.id as string);
+      const { data } = await db().from("frames").select("id, status").eq("project_id", d.projectId).order("index");
+      const rows = d.pilot ? (data ?? []).slice(0, PILOT_FRAMES) : (data ?? []);
+      // Devam ya da yeniden çalıştırmada biten kareler yeniden kuyruğa girmez.
+      return rows.filter((f) => f.status === "queued" || f.status === "error").map((f) => f.id as string);
     });
     await step.sendEvent(
       "queue-frames",
@@ -328,9 +351,10 @@ export const production = inngest.createFunction(
         data: { frameId, projectId: d.projectId, userId: d.userId, mode: "initial" as const },
       })),
     );
+    if (d.pilot) return { pilot: true };
     await step.run("audio", async () => {
       await setJob(d.projectId, { job_step: "audio" });
-      await generateAudio(d.projectId);
+      await generateAudio(d.projectId, Boolean(d.freshAudio));
     });
     await step.run("timeline", async () => {
       await setJob(d.projectId, { job_step: "timeline" });

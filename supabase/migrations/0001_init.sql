@@ -387,3 +387,50 @@ create policy "own cards read" on public.cards
   for select to authenticated using (public.owns_project(project_id));
 create policy "own renders read" on public.renders
   for select to authenticated using (public.owns_project(project_id));
+
+-- ---------------------------------------------------------------------------
+-- Proje asistanı (sohbet), onay bekleyen işlemler ve kural dosyaları
+-- Hepsi yalnızca sunucudan okunur ve yazılır (politika yok).
+-- ---------------------------------------------------------------------------
+create table public.chat_messages (
+  id bigint generated always as identity primary key,
+  project_id uuid not null references public.projects (id) on delete cascade,
+  role text not null check (role in ('user', 'assistant')),
+  text text not null,
+  options jsonb,                 -- tıklanabilir yanıt seçenekleri
+  created_at timestamptz not null default now()
+);
+create index chat_messages_project_idx on public.chat_messages (project_id, id);
+
+create table public.pending_actions (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects (id) on delete cascade,
+  tool text not null,
+  args jsonb not null,
+  cost integer not null,
+  label text not null,
+  status text not null default 'pending' check (status in ('pending', 'done', 'cancelled', 'failed')),
+  created_at timestamptz not null default now()
+);
+create index pending_actions_project_idx on public.pending_actions (project_id, created_at);
+
+create table public.rule_files (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  name text not null,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+create index rule_files_user_idx on public.rule_files (user_id, created_at desc);
+
+create table public.project_rules (
+  project_id uuid not null references public.projects (id) on delete cascade,
+  rule_file_id uuid not null references public.rule_files (id) on delete cascade,
+  primary key (project_id, rule_file_id)
+);
+
+alter table public.chat_messages enable row level security;
+alter table public.pending_actions enable row level security;
+alter table public.rule_files enable row level security;
+alter table public.project_rules enable row level security;
+revoke all on public.chat_messages, public.pending_actions, public.rule_files, public.project_rules from anon, authenticated;

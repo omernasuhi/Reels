@@ -9,6 +9,7 @@ import { getDict } from "@/i18n";
 import { stepForStatus } from "@/lib/types";
 import { requestScript } from "@/server/actions/projects";
 import type { ProjectState } from "@/server/state";
+import { AssistantPanel } from "./assistant-panel";
 import { CharactersView } from "./characters-view";
 import { PreviewView } from "./preview-view";
 import { ProductionView } from "./production-view";
@@ -72,6 +73,8 @@ export function ProjectWorkspace({ initial }: { initial: ProjectState }) {
           </Alert>
         ) : null}
         {view}
+
+        {project.status === "draft" ? null : <AssistantPanel projectId={project.id} refresh={refresh} />}
 
         {state.events ? (
           <details className="mt-12 rounded-lg border border-border">

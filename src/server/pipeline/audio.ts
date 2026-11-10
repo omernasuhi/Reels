@@ -21,9 +21,10 @@ async function audioRow(projectId: string): Promise<AudioRow | null> {
 }
 
 // F) audio.generate: seslendirme + kelime zamanlamaları. Var olan ses yeniden üretilmez.
-export async function generateAudio(projectId: string) {
+// force: var olan sesin yerine yenisini üretir (eski ses, yenisi hazır olana kadar korunur).
+export async function generateAudio(projectId: string, force = false) {
   const existing = await audioRow(projectId);
-  if (existing?.raw_url && existing.words) return;
+  if (existing?.raw_url && existing.words && !force) return;
 
   const project = await loadProject(projectId);
   const script = await latestScript(projectId);
@@ -33,7 +34,7 @@ export async function generateAudio(projectId: string) {
   if (!voiceId) throw new Error("Ses kimliği ayarlanmamış (ELEVENLABS_VOICE_ID ya da Ayarlar > Varsayılan ses).");
 
   const prices = await getSetting("api_prices");
-  const key = `projects/${projectId}/audio/raw.mp3`;
+  const key = `projects/${projectId}/audio/raw-${Date.now()}.mp3`;
 
   const { audio, alignment } = await ttsWithTimestamps(script.tagged_text, voiceId);
   await putObject(key, audio, "audio/mpeg");
@@ -116,7 +117,7 @@ export async function buildTimeline(projectId: string) {
       "-c:a", "libmp3lame", "-b:a", "160k", outFile,
     ]);
     const trimmedDur = await probeDuration(outFile);
-    const trimmedKey = `projects/${projectId}/audio/trimmed.mp3`;
+    const trimmedKey = `projects/${projectId}/audio/trimmed-${Date.now()}.mp3`;
     await putObject(trimmedKey, await fs.readFile(outFile), "audio/mpeg");
 
     const timing = buildFrameTimes(frames.map((f) => f.start_phrase), words, cuts, rawDuration, silences);

@@ -8,6 +8,7 @@ import { splitWords } from "@/lib/pipeline/tags";
 import { contentTypeFor, getObject, isLocalStorage, signedUrl } from "@/lib/storage";
 import type { Character, Frame, Location, QcResult } from "@/lib/types";
 import { db, logEvent } from "@/server/db";
+import { projectRules, rulesSection } from "@/server/rules";
 import { fullOptions, latestScript, loadProject } from "./script";
 
 const KINDS = ["normal", "opening", "problem", "final", "reveal", "closing"] as const;
@@ -74,13 +75,14 @@ export async function planFrames(projectId: string) {
     return problems;
   };
 
-  let plan = await claudeJson({ schema: Plan, system: framePlanSystem(target, hasProduct), content: request, effort: "medium", maxTokens: 32000, ctx });
+  const system = framePlanSystem(target, hasProduct) + rulesSection(await projectRules(projectId), "frames");
+  let plan = await claudeJson({ schema: Plan, system, content: request, effort: "medium", maxTokens: 32000, ctx });
   let problems = check(plan);
   if (problems.length) {
     await logEvent(projectId, "frames.plan", "Kare planı doğrulaması başarısız, düzelttiriliyor", { problems: problems.slice(0, 20) }, "warn");
     plan = await claudeJson({
       schema: Plan,
-      system: framePlanSystem(target, hasProduct),
+      system,
       content: `${request}\n\nYOUR PREVIOUS PLAN:\n${JSON.stringify(plan)}\n\nFix these problems and return the full plan again:\n- ${problems.slice(0, 30).join("\n- ")}`,
       effort: "medium",
       maxTokens: 32000,

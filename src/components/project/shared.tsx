@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getDict } from "@/i18n";
-import type { ActionResult } from "@/server/actions/projects";
+import type { ActionResult } from "@/server/ops";
 import type { ProjectState } from "@/server/state";
 
 const t = getDict();
@@ -10,7 +10,7 @@ const t = getDict();
 export function isActive(s: ProjectState): boolean {
   return (
     Boolean(s.project.job_step) ||
-    s.project.status === "producing" ||
+    (s.project.status === "producing" && s.project.job_step !== "pilot_review") ||
     s.project.status === "rendering" ||
     s.characters.some((c) => c.status === "generating") ||
     s.frames.some((f) => ["queued", "generating", "checking", "fixing"].includes(f.status) && s.project.status !== "characters")

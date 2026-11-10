@@ -32,7 +32,9 @@ function Choice({ name, legend, options, defaultValue }: { name: string; legend:
   );
 }
 
-export function TopicForm({ initialTopic, scriptCredits }: { initialTopic: string; scriptCredits: number }) {
+type Props = { initialTopic: string; scriptCredits: number; ruleFiles: { id: string; name: string }[] };
+
+export function TopicForm({ initialTopic, scriptCredits, ruleFiles }: Props) {
   const [state, action, pending] = useActionState<NewProjectState, FormData>(createProject, {});
   const [topic, setTopic] = useState(initialTopic);
 
@@ -101,6 +103,41 @@ export function TopicForm({ initialTopic, scriptCredits }: { initialTopic: strin
               type="file"
               accept="image/png,image/jpeg,image/webp"
               aria-describedby="icon-help"
+              className="block w-full text-[15px] file:mr-3 file:rounded-md file:border file:border-border file:bg-muted file:px-3 file:py-2 file:text-foreground"
+            />
+          </div>
+        </div>
+      </details>
+
+      <details className="rounded-lg border border-border bg-card" open={ruleFiles.length > 0}>
+        <summary className="cursor-pointer px-4 py-3 font-medium">{t.rules.title}</summary>
+        <div className="space-y-4 border-t border-border px-4 py-5">
+          <p className="text-muted-foreground">{t.rules.help}</p>
+          {ruleFiles.length ? (
+            <fieldset>
+              <legend className="font-medium">{t.rules.library}</legend>
+              <div className="mt-2 space-y-2">
+                {ruleFiles.map((f) => (
+                  <label key={f.id} className="flex items-center gap-3">
+                    <input type="checkbox" name="ruleIds" value={f.id} defaultChecked className="size-5 accent-primary" />
+                    <span className="break-all">{f.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="ruleFiles">{t.rules.upload}</Label>
+            <p id="rules-help" className="text-muted-foreground">
+              {t.rules.uploadHelp}
+            </p>
+            <input
+              id="ruleFiles"
+              name="ruleFiles"
+              type="file"
+              multiple
+              accept=".txt,.md,text/plain,text/markdown"
+              aria-describedby="rules-help"
               className="block w-full text-[15px] file:mr-3 file:rounded-md file:border file:border-border file:bg-muted file:px-3 file:py-2 file:text-foreground"
             />
           </div>

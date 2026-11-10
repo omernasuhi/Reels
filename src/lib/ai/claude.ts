@@ -6,7 +6,7 @@ import { env } from "@/lib/env";
 import { getSetting, logCost } from "@/server/db";
 
 let client: Anthropic | null = null;
-function anthropic() {
+export function anthropic() {
   client ??= new Anthropic({ maxRetries: 4, timeout: 10 * 60 * 1000 });
   return client;
 }
