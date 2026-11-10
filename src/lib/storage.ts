@@ -54,7 +54,8 @@ export function signLocal(key: string, exp: number) {
 
 // İmzalı adres. Süre saat dilimine yuvarlanır; böylece aynı saat içinde adres
 // değişmez ve tarayıcı görselleri her yoklamada yeniden indirmez.
-export async function signedUrl(key: string | null, ttlHours = 2): Promise<string | null> {
+// absolute: tarayıcı dışındaki tüketiciler (render) için tam adres; tarayıcıya göreli adres verilir.
+export async function signedUrl(key: string | null, ttlHours = 2, absolute = false): Promise<string | null> {
   if (!key) return null;
   const bucketStart = Math.floor(Date.now() / 1000 / HOUR) * HOUR;
   if (isR2Configured) {
@@ -65,7 +66,7 @@ export async function signedUrl(key: string | null, ttlHours = 2): Promise<strin
   }
   const exp = bucketStart + (ttlHours + 1) * HOUR;
   const encoded = key.split("/").map(encodeURIComponent).join("/");
-  return `${env.appUrl}/api/files/${encoded}?exp=${exp}&sig=${signLocal(key, exp)}`;
+  return `${absolute ? env.appUrl : ""}/api/files/${encoded}?exp=${exp}&sig=${signLocal(key, exp)}`;
 }
 
 export const isLocalStorage = !isR2Configured;

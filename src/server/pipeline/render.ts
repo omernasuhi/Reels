@@ -15,7 +15,7 @@ import { loadProject } from "./script";
 const run = promisify(execFile);
 
 // Kompozisyon girdisi. Önizleme (Player) ve render aynı fonksiyondan beslenir.
-export async function buildStoryProps(projectId: string, showCards: boolean, ttlHours = 2): Promise<StoryProps | null> {
+export async function buildStoryProps(projectId: string, showCards: boolean, ttlHours = 2, absolute = false): Promise<StoryProps | null> {
   const [{ data: frameRows }, { data: audioData }, { data: cardRows }] = await Promise.all([
     db().from("frames").select("*").eq("project_id", projectId).order("index"),
     db().from("audio").select("*").eq("project_id", projectId).maybeSingle(),
@@ -34,14 +34,14 @@ export async function buildStoryProps(projectId: string, showCards: boolean, ttl
   return {
     frames: await Promise.all(
       frames.map(async (f) => ({
-        url: await signedUrl(f.image_url, ttlHours),
+        url: await signedUrl(f.image_url, ttlHours, absolute),
         start: f.start_time_final!,
         duration: f.duration!,
         kind: f.kind,
         alt: f.sentence,
       })),
     ),
-    audioUrl: (await signedUrl(audio.trimmed_url, ttlHours))!,
+    audioUrl: (await signedUrl(audio.trimmed_url, ttlHours, absolute))!,
     cards: ((cardRows ?? []) as Card[])
       .filter((c) => c.enabled && byIndex.has(c.frame_index))
       .map((c) => ({
@@ -62,7 +62,7 @@ export async function renderVariant(projectId: string, variant: "cards" | "clean
   if (existing?.status === "done" && existing.video_url) return;
 
   const project = await loadProject(projectId);
-  const props = await buildStoryProps(projectId, variant === "cards", 6);
+  const props = await buildStoryProps(projectId, variant === "cards", 6, true);
   if (!props) throw new Error("timeline not ready");
   await db().from("renders").upsert({ project_id: projectId, variant, status: "rendering", video_url: null }, { onConflict: "project_id,variant" });
 
